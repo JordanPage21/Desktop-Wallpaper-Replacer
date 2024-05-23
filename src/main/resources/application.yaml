@@ -1,2 +1,4 @@
+user: brend
 baseUrl: https://wallpapers-clan.com/?s=
-baseDir: C:\Users\brend\Images
+baseDir: C:\Users\${user}\Images\
+themeDir: C:\Users\${user}\AppData\Roaming\Microsoft\Windows\Themes\

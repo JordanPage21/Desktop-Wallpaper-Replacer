@@ -10,7 +10,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
@@ -25,6 +28,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 
 import org.springframework.stereotype.Component;
+
+import com.jordan.page.projects.desktopreplacer.service.WallpaperService.User32;
 
 import com.sun.jna.Library;
 import com.sun.jna.Native;
@@ -44,95 +49,15 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class WallpaperService {
 
-    private static final int SPI_SETDESKWALLPAPER = 0x0014;
-    private static final int SPIF_UPDATEINIFILE = 0x01;
-    private static final int SPIF_SENDCHANGE = 0x02;
+    // private static final int SPI_SETDESKWALLPAPER = 0x0014;
+    // private static final int SPIF_UPDATEINIFILE = 0x01;
+    // private static final int SPIF_SENDCHANGE = 0x02;
 
-    public interface User32Extended extends StdCallLibrary {
-        User32Extended INSTANCE = Native.load("user32", User32Extended.class, W32APIOptions.DEFAULT_OPTIONS);
+    // Define the User32 interface for calling Windows API functions
+    public static interface User32 extends Library {
+        User32 INSTANCE = Native.loadLibrary("user32", User32.class, W32APIOptions.DEFAULT_OPTIONS);
 
-        boolean EnumDisplayDevices(String lpDevice, int iDevNum, DISPLAY_DEVICE lpDisplayDevice, int dwFlags);
-
-        boolean EnumDisplaySettings(char[] lpszDeviceName, int iModeNum, DEVMODE lpDevMode);
-
-        boolean SystemParametersInfo(int uiAction, int uiParam, String pvParam, int fWinIni);
-    }
-
-    @Structure.FieldOrder({
-            "cb", "DeviceName", "DeviceString", "StateFlags", "DeviceID", "DeviceKey"
-    })
-    public static class DISPLAY_DEVICE extends Structure {
-        public WinDef.DWORD cb;
-        public char[] DeviceName = new char[32];
-        public char[] DeviceString = new char[128];
-        public WinDef.DWORD StateFlags;
-        public char[] DeviceID = new char[128];
-        public char[] DeviceKey = new char[128];
-
-        public DISPLAY_DEVICE() {
-            cb = new WinDef.DWORD(size());
-        }
-
-        @Override
-        protected List<String> getFieldOrder() {
-            return Arrays.asList("cb", "DeviceName", "DeviceString", "StateFlags", "DeviceID", "DeviceKey");
-        }
-    }
-
-    @Structure.FieldOrder({
-            "dmDeviceName", "dmSpecVersion", "dmDriverVersion", "dmSize", "dmDriverExtra",
-            "dmFields", "dmPositionX", "dmPositionY", "dmDisplayOrientation", "dmDisplayFixedOutput",
-            "dmColor", "dmDuplex", "dmYResolution", "dmTTOption", "dmCollate", "dmFormName",
-            "dmLogPixels", "dmBitsPerPel", "dmPelsWidth", "dmPelsHeight", "dmDisplayFlags",
-            "dmDisplayFrequency", "dmICMMethod", "dmICMIntent", "dmMediaType", "dmDitherType",
-            "dmReserved1", "dmReserved2", "dmPanningWidth", "dmPanningHeight"
-    })
-    public static class DEVMODE extends Structure {
-        public char[] dmDeviceName = new char[32];
-        public WinDef.WORD dmSpecVersion;
-        public WinDef.WORD dmDriverVersion;
-        public WinDef.WORD dmSize;
-        public WinDef.WORD dmDriverExtra;
-        public WinDef.DWORD dmFields;
-        public WinDef.LONG dmPositionX;
-        public WinDef.LONG dmPositionY;
-        public WinDef.DWORD dmDisplayOrientation;
-        public WinDef.DWORD dmDisplayFixedOutput;
-        public WinDef.WORD dmColor;
-        public WinDef.WORD dmDuplex;
-        public WinDef.WORD dmYResolution;
-        public WinDef.WORD dmTTOption;
-        public WinDef.WORD dmCollate;
-        public char[] dmFormName = new char[32];
-        public WinDef.WORD dmLogPixels;
-        public WinDef.DWORD dmBitsPerPel;
-        public WinDef.DWORD dmPelsWidth;
-        public WinDef.DWORD dmPelsHeight;
-        public WinDef.DWORD dmDisplayFlags;
-        public WinDef.DWORD dmDisplayFrequency;
-        public WinDef.DWORD dmICMMethod;
-        public WinDef.DWORD dmICMIntent;
-        public WinDef.DWORD dmMediaType;
-        public WinDef.DWORD dmDitherType;
-        public WinDef.DWORD dmReserved1;
-        public WinDef.DWORD dmReserved2;
-        public WinDef.DWORD dmPanningWidth;
-        public WinDef.DWORD dmPanningHeight;
-
-        public DEVMODE() {
-            dmSize = new WinDef.WORD(size());
-        }
-
-        @Override
-        protected List<String> getFieldOrder() {
-            return Arrays.asList(
-                    "dmDeviceName", "dmSpecVersion", "dmDriverVersion", "dmSize", "dmDriverExtra", "dmFields",
-                    "dmPositionX", "dmPositionY", "dmDisplayOrientation", "dmDisplayFixedOutput", "dmColor", "dmDuplex",
-                    "dmYResolution", "dmTTOption", "dmCollate", "dmFormName", "dmLogPixels", "dmBitsPerPel",
-                    "dmPelsWidth",
-                    "dmPelsHeight", "dmDisplayFlags", "dmDisplayFrequency", "dmICMMethod", "dmICMIntent", "dmMediaType",
-                    "dmDitherType", "dmReserved1", "dmReserved2", "dmPanningWidth", "dmPanningHeight");
-        }
+        boolean SystemParametersInfo(int one, int two, String s, int three);
     }
 
     @Value("${baseUrl}")
@@ -141,6 +66,9 @@ public class WallpaperService {
     @Value("${baseDir}")
     private String baseDir;
 
+    @Value("${themeDir}")
+    private String themeDir;
+
     private final Random random;
 
     @Autowired
@@ -148,18 +76,10 @@ public class WallpaperService {
         this.random = random;
     }
 
-    public interface User32 extends Library {
-        User32 INSTANCE = Native.load("user32", User32.class, W32APIOptions.DEFAULT_OPTIONS);
-
-        boolean SystemParametersInfo(int uiAction, int uiParam, String pvParam, int fWinIni);
-    }
-
     public void changeWallpaper(String search) throws IOException, InterruptedException {
-        enumerateMonitors();
-        String src = findImageUrl(search);
-        String file = downloadImage(src);
-        clearTranscodedImageCache();
-        setDesktopWallpaper(file, 0);
+        // String src = findImageUrl(search);
+        // String file = downloadImage(src);
+        // copyAndRenameImage(file, 1);
         refreshDesktop();
 
     }
@@ -234,7 +154,8 @@ public class WallpaperService {
                 .build();
 
         try {
-            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<InputStream> response = httpClient.send(request,
+                    HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() == 200) {
                 String fullPath = constructDate(src);
                 try (InputStream in = new BufferedInputStream(response.body());
@@ -255,32 +176,74 @@ public class WallpaperService {
         return null;
     }
 
-    private void setDesktopWallpaper(String imagePath, int displayIndex) {
-        log.info("\n Set Desktop Wallpaper!");
-        String wallpaperKey = "Control Panel\\Desktop";
-        String wallpaperValue = "Wallpaper" + (displayIndex == 0 ? "" : displayIndex);
-        Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, wallpaperKey, wallpaperValue, imagePath);
-    }
+    private void copyAndRenameImage(String imagePath, int displayIndex) {
 
-    private static void refreshDesktop() {
-        log.info("\n Refresh Desktop!");
-        User32.INSTANCE.SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, null, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
-    }
+        log.info("Image Path: {}", imagePath);
 
-    private static void clearTranscodedImageCache() {
-        log.info("\n Clear Transcoded Image Cache");
-        String transcodedImageCacheKey = "Control Panel\\Desktop";
+        try {
+            Path source = Paths.get(imagePath);
+            String fileName = "Transcoded_00" + displayIndex;
+            Path destination = Paths.get(themeDir, fileName);
 
-        // Clear the TranscodedImageCache
-        Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, transcodedImageCacheKey, "TranscodedImageCache");
+            // Copy the image to the destination folder without extension
+            Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
 
-        // Clear additional cached images if present
-        for (int i = 0; i < 10; i++) {
-            String valueName = "TranscodedImageCache_" + String.format("%d", i);
-            if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, transcodedImageCacheKey, valueName)) {
-                Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, transcodedImageCacheKey, valueName);
-            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            log.error("Failed to copy and rename the image: " + e.getMessage());
         }
+    }
+
+    // public static void deleteRegistryCache(int displayIndex) {
+    // String cacheValueName = "TranscodedImageCache_00" + displayIndex;
+
+    // // Check if the registry value exists before attempting to delete it
+    // if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, "Control
+    // Panel\\Desktop", cacheValueName)) {
+    // Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, "Control
+    // Panel\\Desktop", cacheValueName);
+    // System.out.println("Cache deleted for display " + displayIndex);
+    // } else {
+    // System.out.println("Cache does not exist for display " + displayIndex);
+    // }
+    // }
+
+    // public void setWallpaper(int displayIndex) {
+    // String wallpaper;
+
+    // if (displayIndex == 1) {
+    // wallpaper = "Wallpaper";
+    // } else if (displayIndex == 0) {
+    // wallpaper = "Wallpaper1";
+    // } else {
+    // wallpaper = "Wallpaper2";
+    // }
+
+    // String fullThemeDir = themeDir.concat("Transcoded_00" + displayIndex);
+
+    // // Check if the registry value exists before attempting to set it
+    // if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, "Control
+    // Panel\\Desktop", wallpaper)) {
+    // Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, "Control
+    // Panel\\Desktop", wallpaper,
+    // fullThemeDir);
+    // log.info(wallpaper + " set to: " + fullThemeDir);
+    // } else {
+
+    // // If the value does not exist, create a new registry value with the provided
+    // // themeDir
+    // Advapi32Util.registryCreateKey(WinReg.HKEY_CURRENT_USER, "Control
+    // Panel\\Desktop", wallpaper);
+    // Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, "Control
+    // Panel\\Desktop", wallpaper,
+    // fullThemeDir);
+    // System.out.println(wallpaper + " created and set to: " + fullThemeDir);
+
+    // }
+    // }
+
+    public static void refreshDesktop() {
+        User32.INSTANCE.SystemParametersInfo(0x0014, 0, null, 0x01 | 0x02);
     }
 
     private String constructDate(String src) {
@@ -295,26 +258,7 @@ public class WallpaperService {
         if (lastSlashIdx != -1) {
             filename = src.substring(lastSlashIdx + 1);
         }
-        return baseDir + File.separator + (month + 1) + File.separator + day + File.separator + filename;
-    }
-
-    public static void enumerateMonitors() {
-        User32Extended user32 = User32Extended.INSTANCE;
-        DISPLAY_DEVICE displayDevice = new DISPLAY_DEVICE();
-
-        int deviceIndex = 0;
-        while (user32.EnumDisplayDevices(null, deviceIndex, displayDevice, 0)) {
-            log.info("Monitor " + deviceIndex + ": " + Native.toString(displayDevice.DeviceName) + " ("
-                    + Native.toString(displayDevice.DeviceString) + ")");
-
-            DEVMODE devMode = new DEVMODE();
-            if (user32.EnumDisplaySettings(displayDevice.DeviceName, -1, devMode)) {
-                log.info("  Resolution: " + devMode.dmPelsWidth + "x" + devMode.dmPelsHeight);
-            }
-
-            deviceIndex++;
-            displayDevice = new DISPLAY_DEVICE(); // Create a new instance for the next monitor
-        }
+        return baseDir + (month + 1) + File.separator + day + File.separator + filename;
     }
 
 }
