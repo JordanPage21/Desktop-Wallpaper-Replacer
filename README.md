@@ -1,6 +1,8 @@
 # Desktop Wallpaper Replacer
 
-The Desktop Wallpaper Replacer is a Java application that allows users to change their desktop wallpaper by searching for images based on a given search term. The application provides a graphical user interface (GUI) for users to input their search term and interact with the application.
+Version 1
+
+The Desktop Wallpaper Replacer is a Java application that allows users to change their desktop wallpaper by searching for images based on a given search term. The application provides a graphical user interface (GUI) for users to input their search term and interact with the application. 
 
 ## Features
 
