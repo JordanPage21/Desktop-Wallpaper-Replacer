@@ -1,20 +1,14 @@
 package com.jordan.page.projects.desktopreplacer;
 
-import java.util.Scanner;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import com.jordan.page.projects.desktopreplacer.UI.MainUI;
-import com.jordan.page.projects.desktopreplacer.service.WallpaperService;
 
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.stage.Stage;
-import lombok.extern.slf4j.Slf4j;
 
 @SpringBootApplication
 public class DesktopReplacerApplication extends Application {
