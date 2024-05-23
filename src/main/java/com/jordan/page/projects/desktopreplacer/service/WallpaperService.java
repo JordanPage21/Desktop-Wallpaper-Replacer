@@ -14,6 +14,7 @@ import java.net.http.HttpResponse;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Random;
 
 import org.jsoup.*;
@@ -27,6 +28,14 @@ import org.springframework.stereotype.Component;
 
 import com.sun.jna.Library;
 import com.sun.jna.Native;
+import com.sun.jna.Structure;
+
+import com.sun.jna.platform.win32.Advapi32Util;
+
+import com.sun.jna.platform.win32.WinDef;
+import com.sun.jna.platform.win32.WinReg;
+
+import com.sun.jna.win32.StdCallLibrary;
 import com.sun.jna.win32.W32APIOptions;
 
 import lombok.extern.slf4j.Slf4j;
@@ -35,10 +44,95 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class WallpaperService {
 
-    public static interface User32 extends Library {
-        User32 INSTANCE = Native.loadLibrary("user32", User32.class, W32APIOptions.DEFAULT_OPTIONS);
+    private static final int SPI_SETDESKWALLPAPER = 0x0014;
+    private static final int SPIF_UPDATEINIFILE = 0x01;
+    private static final int SPIF_SENDCHANGE = 0x02;
 
-        boolean SystemParametersInfo(int one, int two, String s, int three);
+    public interface User32Extended extends StdCallLibrary {
+        User32Extended INSTANCE = Native.load("user32", User32Extended.class, W32APIOptions.DEFAULT_OPTIONS);
+
+        boolean EnumDisplayDevices(String lpDevice, int iDevNum, DISPLAY_DEVICE lpDisplayDevice, int dwFlags);
+
+        boolean EnumDisplaySettings(char[] lpszDeviceName, int iModeNum, DEVMODE lpDevMode);
+
+        boolean SystemParametersInfo(int uiAction, int uiParam, String pvParam, int fWinIni);
+    }
+
+    @Structure.FieldOrder({
+            "cb", "DeviceName", "DeviceString", "StateFlags", "DeviceID", "DeviceKey"
+    })
+    public static class DISPLAY_DEVICE extends Structure {
+        public WinDef.DWORD cb;
+        public char[] DeviceName = new char[32];
+        public char[] DeviceString = new char[128];
+        public WinDef.DWORD StateFlags;
+        public char[] DeviceID = new char[128];
+        public char[] DeviceKey = new char[128];
+
+        public DISPLAY_DEVICE() {
+            cb = new WinDef.DWORD(size());
+        }
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("cb", "DeviceName", "DeviceString", "StateFlags", "DeviceID", "DeviceKey");
+        }
+    }
+
+    @Structure.FieldOrder({
+            "dmDeviceName", "dmSpecVersion", "dmDriverVersion", "dmSize", "dmDriverExtra",
+            "dmFields", "dmPositionX", "dmPositionY", "dmDisplayOrientation", "dmDisplayFixedOutput",
+            "dmColor", "dmDuplex", "dmYResolution", "dmTTOption", "dmCollate", "dmFormName",
+            "dmLogPixels", "dmBitsPerPel", "dmPelsWidth", "dmPelsHeight", "dmDisplayFlags",
+            "dmDisplayFrequency", "dmICMMethod", "dmICMIntent", "dmMediaType", "dmDitherType",
+            "dmReserved1", "dmReserved2", "dmPanningWidth", "dmPanningHeight"
+    })
+    public static class DEVMODE extends Structure {
+        public char[] dmDeviceName = new char[32];
+        public WinDef.WORD dmSpecVersion;
+        public WinDef.WORD dmDriverVersion;
+        public WinDef.WORD dmSize;
+        public WinDef.WORD dmDriverExtra;
+        public WinDef.DWORD dmFields;
+        public WinDef.LONG dmPositionX;
+        public WinDef.LONG dmPositionY;
+        public WinDef.DWORD dmDisplayOrientation;
+        public WinDef.DWORD dmDisplayFixedOutput;
+        public WinDef.WORD dmColor;
+        public WinDef.WORD dmDuplex;
+        public WinDef.WORD dmYResolution;
+        public WinDef.WORD dmTTOption;
+        public WinDef.WORD dmCollate;
+        public char[] dmFormName = new char[32];
+        public WinDef.WORD dmLogPixels;
+        public WinDef.DWORD dmBitsPerPel;
+        public WinDef.DWORD dmPelsWidth;
+        public WinDef.DWORD dmPelsHeight;
+        public WinDef.DWORD dmDisplayFlags;
+        public WinDef.DWORD dmDisplayFrequency;
+        public WinDef.DWORD dmICMMethod;
+        public WinDef.DWORD dmICMIntent;
+        public WinDef.DWORD dmMediaType;
+        public WinDef.DWORD dmDitherType;
+        public WinDef.DWORD dmReserved1;
+        public WinDef.DWORD dmReserved2;
+        public WinDef.DWORD dmPanningWidth;
+        public WinDef.DWORD dmPanningHeight;
+
+        public DEVMODE() {
+            dmSize = new WinDef.WORD(size());
+        }
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList(
+                    "dmDeviceName", "dmSpecVersion", "dmDriverVersion", "dmSize", "dmDriverExtra", "dmFields",
+                    "dmPositionX", "dmPositionY", "dmDisplayOrientation", "dmDisplayFixedOutput", "dmColor", "dmDuplex",
+                    "dmYResolution", "dmTTOption", "dmCollate", "dmFormName", "dmLogPixels", "dmBitsPerPel",
+                    "dmPelsWidth",
+                    "dmPelsHeight", "dmDisplayFlags", "dmDisplayFrequency", "dmICMMethod", "dmICMIntent", "dmMediaType",
+                    "dmDitherType", "dmReserved1", "dmReserved2", "dmPanningWidth", "dmPanningHeight");
+        }
     }
 
     @Value("${baseUrl}")
@@ -54,10 +148,20 @@ public class WallpaperService {
         this.random = random;
     }
 
+    public interface User32 extends Library {
+        User32 INSTANCE = Native.load("user32", User32.class, W32APIOptions.DEFAULT_OPTIONS);
+
+        boolean SystemParametersInfo(int uiAction, int uiParam, String pvParam, int fWinIni);
+    }
+
     public void changeWallpaper(String search) throws IOException, InterruptedException {
+        enumerateMonitors();
         String src = findImageUrl(search);
         String file = downloadImage(src);
-        setDesktopWallpaper(file);
+        clearTranscodedImageCache();
+        setDesktopWallpaper(file, 0);
+        refreshDesktop();
+
     }
 
     private String findImageUrl(String search) throws IOException, InterruptedException {
@@ -151,8 +255,32 @@ public class WallpaperService {
         return null;
     }
 
-    private void setDesktopWallpaper(String src) {
-        User32.INSTANCE.SystemParametersInfo(0x0014, 0, src, 1);
+    private void setDesktopWallpaper(String imagePath, int displayIndex) {
+        log.info("\n Set Desktop Wallpaper!");
+        String wallpaperKey = "Control Panel\\Desktop";
+        String wallpaperValue = "Wallpaper" + (displayIndex == 0 ? "" : displayIndex);
+        Advapi32Util.registrySetStringValue(WinReg.HKEY_CURRENT_USER, wallpaperKey, wallpaperValue, imagePath);
+    }
+
+    private static void refreshDesktop() {
+        log.info("\n Refresh Desktop!");
+        User32.INSTANCE.SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, null, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+    }
+
+    private static void clearTranscodedImageCache() {
+        log.info("\n Clear Transcoded Image Cache");
+        String transcodedImageCacheKey = "Control Panel\\Desktop";
+
+        // Clear the TranscodedImageCache
+        Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, transcodedImageCacheKey, "TranscodedImageCache");
+
+        // Clear additional cached images if present
+        for (int i = 0; i < 10; i++) {
+            String valueName = "TranscodedImageCache_" + String.format("%d", i);
+            if (Advapi32Util.registryValueExists(WinReg.HKEY_CURRENT_USER, transcodedImageCacheKey, valueName)) {
+                Advapi32Util.registryDeleteValue(WinReg.HKEY_CURRENT_USER, transcodedImageCacheKey, valueName);
+            }
+        }
     }
 
     private String constructDate(String src) {
@@ -169,4 +297,24 @@ public class WallpaperService {
         }
         return baseDir + File.separator + (month + 1) + File.separator + day + File.separator + filename;
     }
+
+    public static void enumerateMonitors() {
+        User32Extended user32 = User32Extended.INSTANCE;
+        DISPLAY_DEVICE displayDevice = new DISPLAY_DEVICE();
+
+        int deviceIndex = 0;
+        while (user32.EnumDisplayDevices(null, deviceIndex, displayDevice, 0)) {
+            log.info("Monitor " + deviceIndex + ": " + Native.toString(displayDevice.DeviceName) + " ("
+                    + Native.toString(displayDevice.DeviceString) + ")");
+
+            DEVMODE devMode = new DEVMODE();
+            if (user32.EnumDisplaySettings(displayDevice.DeviceName, -1, devMode)) {
+                log.info("  Resolution: " + devMode.dmPelsWidth + "x" + devMode.dmPelsHeight);
+            }
+
+            deviceIndex++;
+            displayDevice = new DISPLAY_DEVICE(); // Create a new instance for the next monitor
+        }
+    }
+
 }
