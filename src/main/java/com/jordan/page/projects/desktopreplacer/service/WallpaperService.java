@@ -133,8 +133,21 @@ public class WallpaperService {
             HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() == 200) {
                 String fullPath = constructDate(src);
+
+                File file = new File(fullPath);
+
+                // Create parent directories if they do not exist
+                File parentDir = file.getParentFile();
+                if (parentDir != null && !parentDir.exists()) {
+                    if (parentDir.mkdirs()) {
+                        log.info("Created directories: " + parentDir.getPath());
+                    } else {
+                        log.error("Failed to create directories: " + parentDir.getPath());
+                        return null;
+                    }
+                }
                 try (InputStream in = new BufferedInputStream(response.body());
-                        FileOutputStream out = new FileOutputStream(new File(fullPath))) {
+                        FileOutputStream out = new FileOutputStream(file)) {
                     byte[] buffer = new byte[1024];
                     int bytesRead;
                     while ((bytesRead = in.read(buffer)) != -1) {
